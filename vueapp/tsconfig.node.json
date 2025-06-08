@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true, /* 允许在 import 语句中使用 .ts 扩展名 */
+    "isolatedModules": true, /* 确保每个文件都作为单独的模块进行编译，即每个文件都可以独立编译，而不依赖于其他文件的上下文。 */
+    "moduleDetection": "force", /* 强制将所有文件视为模块。即使文件中没有显式的 import 或 export 语句，也会将其视为模块。 */
+    "noEmit": true, /* 不生成编译后的 JavaScript 文件。这通常用于仅进行类型检查的场景，例如在开发过程中，只需要检查代码的类型正确性，而不需要实际生成编译后的文件。 */
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  },
+  /* 需要 TypeScript 编译器处理的文件路径。这里只包含了 vite.config.ts 文件，表示该配置文件主要用于处理 Vite 配置文件的编译 */
+  "include": ["vite.config.ts"]
+}
