@@ -664,7 +664,7 @@
       localCache.setCache('isRemPwd',newValue)
     })
   ```
-## 角色权限
+## **角色权限(重点)**
 - ==RBAC(role based access control): 数据库知识,意为"基于角色的访问控制"==
 - 一个公司有不同的职位,单纯以'人'为主体,分配权限是不行的,因为公司的人员会有变动,这样效率低,所以数据库设计的时候会以"角色"为主体,比如设计"超级管理员(总裁,总经理) 管理员(主管,组长) 普通用户(普通员工)",这样只需要设计三个角色,然后根据公司职位分配管理系统的"角色",公司的人员通过不同的'角色'进入后台管理系统可以获取不同的权限;
 - ==初始提供的测试账号: `coderwhy coderdemo` 密码: `123456`==
@@ -755,53 +755,338 @@
       <el-container class="main-content">
         <el-aside width="200px">Aside</el-aside>
         <el-container>
-          <el-header height="80px">Header</el-header>
+          <el-header height="50px">Header</el-header>
           <el-main>Main
             <button @click="handleExitClick">退出登录</button></el-main>
         </el-container>
       </el-container>
     </div>
   ```
+- ==然后在`/components`中创建两个组件main-header/main-menu,分别放入main-header和main-aside==
+  ```html
+    <el-container class="main-content">
+      <el-aside width="200px">
+        <MainMenu />
+      </el-aside>
+      <el-container>
+        <el-header height="50px">
+          <MainHeader />
+        </el-header>
+        <el-main>Main
+          <button @click="handleExitClick">退出登录</button></el-main>
+      </el-container>
+    </el-container>
+  ```
+### 侧边栏main-menu
+- 在主页的main-aside处的组件main-menu(简单的组件学习)
+  [![pVijXsH.png](https://s21.ax1x.com/2025/06/08/pVijXsH.png)](https://imgse.com/i/pVijXsH)
+- 样式调整-删除滚动条
   ```css
-    .main{
-      height: 100%;
-      color: red;
-    }
-
-    .main-content{
-      height: 100%;
-    }
-
-    .el-aside{
-      background-color: yellowgreen;
-    }
-
-    .el-header{
-      background-color: aquamarine;
-    }
-
-    .el-main{
-      background-color: aqua;
+    /* 删除滚动条 */
+    &::-webkit-scrollbar {
+      display: none;
     }
   ```
-- ==同时在`/components`中创建两个组件main-header/main-menu,分别放入main-header和main-aside==
-### 侧边栏main-menu
-- 在主页的main-aside处的组件main-menu
+### 菜单数据填充
+- ==菜单数据已经获取,保存到pinia中,并且已经持久化保存到本地`login`; 优化数据的存储==
+  ```ts
+    state: (): ILoginState => ({
+      token: localCache.getCache(LOGIN_TOKEN) ?? '',
+      userInfo: localCache.getCache(LOGIN).userInfo ?? {},
+      userMenu: localCache.getCache(LOGIN).userMenu ?? []
+    })
+  ```
+- ==循环menu数据,**公司的数据可能没有老师整理的这么整齐,所以前端优先要做的是整理后端的数据变为自己想要的数据格式,然后再展示前端数据会简单整齐**==
+  ```html
+    <!-- for循环遍历菜单,template属性一般不要添加'v-for :key'这种属性,加到标签上,否则会导致el组件功能异常 -->
+    <el-menu default-active="2" text-color="#b7bdc3" active-text-color="#fff" background-color="#001529">
+      <el-sub-menu
+        v-for="item in userMenu"
+        :key="item.id"
+        :index="String(item.id)"
+      >
+        <template #title>
+          <el-icon>
+            <!-- 后端返回的图表数据类似"el-icon-setting"的字符串数据 -->
+            <component :is="item.icon.split('-icon-')[1]" />
+          </el-icon>
+          <span>{{ item.name }}</span>
+        </template>
+        <el-menu-item
+          v-for="subItem in item.children"
+          :key="subItem.id"
+          :index="String(subItem.id)"
+        >
+          {{ subItem.name }}
+        </el-menu-item>
+      </el-sub-menu>
+    </el-menu>
+  ```
+  > ==动态展示图标利用的动态组件`component`,回顾下这个知识==
 
+### 侧边栏折叠
+- ==练习vue中的父子通信==
+- 顶部header点击'折叠'图标,实现折叠效果的同时,侧边栏main-aside(main内)的宽度跟随变化: ==子组件main-header影响到父组件main变化,子传父== 
+- ==子main-header==
+  ```html
+    <div class="menu-icon" @click="handleMenuIconClick">
+      <!-- 比v-if更加简单的html结构是动态组件component -->
+      <el-icon size="28px">
+        <!-- 注意: 例如当前处于折叠状态isFold=true,显示的图标应为Expand(展开),这样点击进入'展开'状态 -->
+        <component :is="isFold ? 'Expand' : 'Fold'"></component>
+      </el-icon>
+    </div>
+  ```
+  ```ts
+    /** 子传父: 定义emit */
+    const emit = defineEmits(['changeFold'])
+    /** 定义状态等 */
+    const isFold = ref(false)
+    /** 事件处理 */
+    function handleMenuIconClick(){
+      isFold.value = !isFold.value
+      // 子传父,传递监听changeFold函数和参数isFold
+      emit('changeFold',isFold.value)
+    }
+  ```
+- ==父main==
+  ```html
+    <el-header height="50px">
+        <!-- 子传父 -->
+        <MainHeader @change-fold="handleChangeFold" />
+    </el-header>
+  ```
+  ```ts
+    const isFold = ref(false) // 折叠状态
+    // 处理main-header遮挡变化
+    function handleChangeFold(isFlag:boolean){
+      isFold.value = isFlag // 父组件状态isFold 子组件传递参数isFlag
+    }
+  ```
+- ==改变了父组件的宽度,同时把状态传入MainMenu组件,父传子==
+  ```html
+    <el-aside :width="isFold ? '60px': '200px'">
+        <!-- 父传子 -->
+        <MainMenu :is-fold="isFold"/>
+    </el-aside>
+  ```
+  > 实现折叠不能只有侧边栏宽度变化,关键还是侧边栏内部的menu组件变化,menu组件有自己的属性,应用于折叠
+- ==子MainMenu==
+  ```html
+     <h2 class="title" v-show="!isFold">宏远管理系统</h2>
+     <el-menu :collapse="isFold">...</el-menu>
+  ```
+  ```ts
+    /** 父传子: 定义props */
+    defineProps({
+      isFold: {
+        type: Boolean,
+        default: false
+      }
+    })
+  ```
+  > 通过折叠状态isFold决定el-menu组件的模式和标题h2显示
+### header-info(过)
+- 配置header顶部右侧的信息栏部分,在components/main-header在加/cpns/header-info
+- 利用组件 下拉组件el-dropdown/el-avatar,省略代码都很简单
 
+## **动态路由(重点)**
+- 前端设计路由: 为了满足所有角色的使用,必须要注册所有的路由,通过菜单限制不同用户的权限,==但是有个漏洞,如果用url路径进行页面访问,其实仍然可以访问到权限之外的页面,因为前端设计初衷只是通过页面内的菜单来限制权限,无法对浏览器url进行限制==
+- ==**动态路由: 根据不同的角色,动态注册应该有的路由; 而不是一次性把所有的路由注册**==
+- 思路: 登录获取的信息: token/用户信息/菜单信息
+- ==方法1(推荐) 基于菜单(Menu)的动态路由管理==
+  ```
+    在登陆后,我们获取到了菜单信息,已经动态展示了菜单
+    所以根据菜单映射为路由对象注册,没有菜单证明没有权限,就不映射不注册了
+  ```
+- 方法2: 基于角色(Role)的动态路由管理
+    ```ts
+      const roles = {
+        "superAdmin" : [所有路由] => router.main.children
+        "admin" : [部分路由] => router.main.children
+        "service" : [少量路由] => router.main.children
+      + "manage" : [XXX] => router.main.children
+      }
+    ```
+    > 缺点: 角色是固定的,一旦有新的角色加入,前端要重新发布新版本,后端也要加入新角色和它的路由配置,都会很麻烦
 
+### 动态添加路由
+- ==方便我们创建对应的文件和注册路由,但是创建都是有规律的,所以老师封装了一个工具,如果不会工具,自己手动创建也可以,就是麻烦一点==
+- 下载: `npm i coderwhy -g`
+- 命令: `coderwhy add3page_setup department -d src/views/main/system/department`; 创建vue3setup文件,-d代表文件创建路径,前面为文件名字,同时会在router中创建对应ts文件,这都是和后端有关系的,根据规律的数据创建规律的文件结构,==最终组件页面views和router创建的路由文件结构一样,共同进行联动==
+- 创建文件结构示意图:
+  [![pVFeY0x.png](https://s21.ax1x.com/2025/06/08/pVFeY0x.png)](https://imgse.com/i/pVFeY0x)
+- 文件示例: ==**所有的文件结构对标Menu结构**==
+  ```ts
+    // router/main/analysis/dashboard/dashboard.ts
+    const dashboard = () => import('@/views/main/analysis/dashboard/dashboard.vue')
+    export default {
+      path: '/main/analysis/dashboard',
+      name: 'dashboard',
+      component: dashboard,
+      children: []
+    }
+  ```
+  ```html
+    <!-- /views/main/analysis/dashboard/dashboard.vue -->
+    <template>
+      <div class="dashboard">
+        <h2>dashboard</h2>
+      </div>
+    </template>
 
+    <script setup lang="ts" name="dashboard"></script>
 
+    <style scoped>
+      .dashboard {
+      }
+    </style>
+  ```
+- ==根据菜单动态添加路由==
+  1.获取菜单(userMenu)
+  2.获取菜单之后,动态获取所有路由对象(已存入独立文件),放入数组
+  3.根据菜单匹配正确路由,添加到main内部
+  ```ts
+    // 因为代码过多所以封装为工具函数 -> utils/map-menus
+    // store/login 异步函数中继续
+    // 3.重点: 动态添加路由
+    const routes = mapMenusToRoutes(this.userMenu)
+    routes.forEach((route) => router.addRoute('main', route))
+  ```
+  ```ts
+    import type { RouteRecordRaw } from "vue-router"
 
+    export function mapMenusToRoutes(mapMenus: any[]) {
+      
+      // 1.1 动态加载所有路由对象,放入数组,路由item的类型为RouteRecordRaw; 不会的话可以写any
+      const localRoutes: RouteRecordRaw[] = []
+      // 1.2 读取所有router/main所有ts文件,匹配main下所有子目录中的所有.ts文件,默认是懒加载,我们希望立即获取导出的模块,添加属性eager:true
+      // 修改files类型,原为string,unknown ,导致module无法进行任何操作
+      const files: Record<string, any> = import.meta.glob("../router/main/**/*.ts", { eager: true })
+      for (const key in files) {
+        const module = files[key]
+        localRoutes.push(module.default) // 最后的数组内容,如果你不想用import.meta.glob导出模块内容,手写也可以
+      }
 
+      // 2.匹配正确的路由,userMenu的路由url和localRoutes的路由path是一致的,所以当userMenu的url和localRoutes的path相同时,就添加这个路由
+      // 工具内部不适合做添加路由这种操作,应当把整理好的路由返回出去,供用户自己随意使用
+      const routes: RouteRecordRaw[] = []
+      for (const menu of mapMenus) {
+        for (const subMenu of menu.children) {
+          const route = localRoutes.find((item) => item.path === subMenu.url)
+          // 严谨的类型缩小,防止route为undefined类型
+          if (route) routes.push(route)
+        }
+      }
 
+      return routes
+    }
+  ```
+  > ==coderwhy老师工具创建的ts文件导出都是有规律的(在工作中,可以依据这个数据思路整理后端发送的代码),获取这些文件的导出内容后(新知识),存入数组,然后匹配出合适的路由,放入数组并返回(动态路由的依据)==
+- 文件导出的打印示意图
+  [![pVFeTun.png](https://s21.ax1x.com/2025/06/08/pVFeTun.png)](https://imgse.com/i/pVFeTun)
+- 双层遍历Menu的数据结构图
+  [![pVFe7Bq.png](https://s21.ax1x.com/2025/06/08/pVFe7Bq.png)](https://imgse.com/i/pVFe7Bq)
+### 页面刷新后路由持久化
+- 正常登录后,路由会像上一节笔记那样进行一次动态路由添加,==但是页面重新刷新后,动态路由会消失==,由于动态添加路由的操作是登录点击异步函数loginAccountAction内的一部分,所以刷新后,并不会自动重新注册路由,==**所以刷新页面后需要重新执行一次动态路由注册函数**==
+- ==在此基础上,添加新的action函数==
+  ```ts
+    // 刷新页面后,重新映射和注册路由的函数
+    loadStoreAction() {
+      // 用户刷新不一定要在main页面中,在login页面中刷新也会执行,但是如果有下面的条件,则一定是登录后,在main页面内刷新的
+      if (this.token && this.userInfo && this.userMenu) {
+        // 重新执行一次映射和注册路由
+        const routes = mapMenusToRoutes(this.userMenu)
+        routes.forEach((route) => router.addRoute('main', route))
+      }
+    }
+  ```
+  > ==**接下来重点是确保这个函数能够在页面刷新时被调用**==
+- 最外层main.ts文件,这是index.html引入的文件,页面刷新里面的ts代码也会重新执行一次,所以在这里调用,同时为了main.ts代码简洁,所以需要提取为函数,做法等同于前面自动导入ele元素的icon
+  ```ts
+    // main.ts
+    import { createApp } from 'vue'
+    import App from './App.vue'
+    import router from '@/router'
+    import store from '@/store'
+    import icons from './global/register-incons'
 
+    const app = createApp(App)
+    app.use(icons) // app.use()引入插件函数会自动隐式传入第一个参数,实例对象app,无需我们自己传入
+    app.use(store) // 同上,pinia内封装点东西
+    app.use(router) // 先注册store再注册路由顺序更好,因为store中有重置动态路由的函数
+    app.mount('#app')
+  ```
+  ```ts
+    // store/index.ts
+    import { createPinia } from 'pinia'
+    import piniaPluginPersistedstate from 'pinia-plugin-persistedstate';
+    import type { App } from 'vue';
+    import { useLoginStore } from './login/login';
 
+    const pinia = createPinia()
+    pinia.use(piniaPluginPersistedstate);
 
+    function registerStore(app: App<Element>){
+      app.use(pinia)
+      // 注册完pinia才可以用store
+      const loginStore = useLoginStore()
+      loginStore.loadStoreAction() // 调用动态注册路由的函数
+    }
 
+    export default registerStore
+  ```
+  > ==连同之前的pinia持久化,这次又调用了loadStoreAction函数完成页面刷新时能够重新注册路由的操作==
 
+### main页面的重定向
+- ==**只要进入`/main`页面(无论url搜索框还是登录进入), 自动重定向到所拥有的路由的第一个路由页面**==
+- ==1.首先记录注册动态路由时的第一个菜单==
+- 回到工具函数mapMenusToRoutes,在最后一行添加
+  ```ts
+    export let firstMenu:any = null
 
+    // function内 ....
+    for (const menu of mapMenus) {
+      for (const subMenu of menu.children) {
+        const route = localRoutes.find((item) => item.path === subMenu.url)
+        // 严谨的类型缩小,防止route为undefined类型
+        if (route) routes.push(route)
+        // 记录动态路由注册的第一个菜单
+    +   if(!firstMenu && route) firstMenu = subMenu
+      }
+    }
+  ```
+  > ==这个firstMenu是一个本文件内的全局遍历,通过`export`导出,菜单的属性url就是跳转的路径==
+- ==2.路由首位内执行跳转任务==
+  ```ts
+    // router/index.ts
+    router.beforeEach((to,from) => {
+      const token = localCache.getCache(LOGIN_TOKEN)
+      // 没有token,先登录
+      if(to.path.startsWith('/main') && !token){ 
+        return '/login' 
+      }
+      // 如果进入main,则进入所拥有的第一个菜单
+      if(to.path === '/main' && token) return firstMenu?.url 
+    })
+  ```
+### Menu跳转和记忆保留
+- ==这里的代码比coderwhy老师的代码更简洁,利用了组件的属性,可能老师那个时候elementPlus还没有这么完善==
+- ==Menu跳转:== el-menu内开启router属性,点击el-menu-item可以跳转到其index属性的路由,而且coderwhy老师精巧的路由设计正好满足这个需求,所以el-menu-item内的index属性全部为`subItem.url`,也就是路由路径,这样直接完成了菜单跳转
+- ==记忆保留: == 当我们选中菜单中某一项后,刷新页面希望自动打开上一次选中的菜单项,el-menu中提供属性default-active用于自动打开菜单的某一项,它的值和el-menu-item绑定的index值相关联,可以通过获取浏览器url的值,然后赋值给default-active来实现自动打开菜单的功能,url路径中的路由和菜单el-menu-item绑定的index是一致的(==coderwhy老师绝妙的数据设计魅力!==)
+  ```html
+    <el-menu :default-active="defaultActive">...</el-menu>
+  ```
+  ```ts
+    // 2.Menu的默认菜单
+    // 获取页面url,放入menu组件的属性default-active(默认选中的菜单项)
+    const route = useRoute()
+    const defaultActive = ref(route.path)
+  ```
 
+### 顶部面包屑(待)
+- 页面已经搭建完成,导航组件(Nav/breadcrumb)
+- 好像还是逃不过path->menu,不行就回去补补
 
 
 

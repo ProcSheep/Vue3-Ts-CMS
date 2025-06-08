@@ -1,5 +1,5 @@
 import { hyRequest } from "..";
-import type { IAccount } from "@/view/login/types";
+import type { IAccount } from "@/views/login/types";
 
 export function accountLoginRequest(account: IAccount){
   return hyRequest.post({
