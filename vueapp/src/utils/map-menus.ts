@@ -29,3 +29,31 @@ export function mapMenusToRoutes(mapMenus: any[]) {
 
   return routes
 }
+
+
+
+interface IBreadcrumbs {
+  name: string,
+  path?: string
+}
+
+/** 根据路径匹配需要显示的菜单面包屑数组
+ * @param path 需要匹配的路径
+ * @param userMenus 所有的菜单
+ */
+
+export function mapPathToBreadcrumbs(path: string, userMenus: any[]){
+  const breadcrumbs: IBreadcrumbs[] = []
+  for(const menu of userMenus){
+    for(const subMenu of menu.children){
+      if(subMenu.url === path){
+        // 把匹配到的菜单链条连同名字和path信息一同加入数组
+        breadcrumbs.push({name: menu.name})
+        breadcrumbs.push({name: subMenu.name , path: subMenu.url})
+      }
+    }
+  }
+
+  return breadcrumbs
+}
+

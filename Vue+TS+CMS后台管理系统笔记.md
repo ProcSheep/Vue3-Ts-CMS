@@ -1084,9 +1084,151 @@
     const defaultActive = ref(route.path)
   ```
 
-### 顶部面包屑(待)
-- 页面已经搭建完成,导航组件(Nav/breadcrumb)
-- 好像还是逃不过path->menu,不行就回去补补
+### 顶部面包屑
+- ==面包屑功能组件`breadcrumb` , 在/components/header/cpns创建新组件==
+  ```html
+    <div class="header-breadcrumb">
+      <!-- separator-icon分割符: 图标组件 -->
+      <el-breadcrumb :separator-icon="ArrowRight">
+        <template v-for="item in breadcrumbs" :key="item.name">
+          <el-breadcrumb-item :to="item.path">{{ item.name }}</el-breadcrumb-item>
+        </template>
+      </el-breadcrumb>
+    </div>
+  ```
+  > 组件需要name,代表面包屑的标题,有需要的话可以设置path,点击自动跳转到所设置页面,不过这里不需要,因为一级菜单路由没有页面,而菜单只有一级和二级路由,所以无需设置跳转
+- ==utils工具,映射菜单map-menus.ts==
+  ```ts
+    interface IBreadcrumbs {
+      name: string,
+      path?: string
+    }
+
+    /** 根据路径匹配需要显示的菜单面包屑数组
+    * @param path 需要匹配的路径
+    * @param userMenus 所有的菜单
+    */
+
+    export function mapPathToBreadcrumbs(path: string, userMenus: any[]){
+      const breadcrumbs: IBreadcrumbs[] = []
+      for(const menu of userMenus){
+        for(const subMenu of menu.children){
+          if(subMenu.url === path){
+            // 把匹配到的菜单链条连同名字和path信息一同加入数组
+            breadcrumbs.push({name: menu.name})
+            breadcrumbs.push({name: subMenu.name , path: subMenu.url})
+          }
+        }
+      }
+
+      return breadcrumbs
+    }
+  ```
+  > 收集当前路径下的面包屑(菜单链条,除了一级菜单仅收集name,之后子菜单均收集name和path,path)
+
+## 系统管理
+### 用户管理
+#### 顶部布局
+- 页面搭建: `cpns/user-search`  
+- 整体组件: el-row/el-col , el-form/el-form-item
+- 表单内: 输入框 el-input, 选择框 el-select, 日期选择 el-date-picker
+- ==简要解析:(代码略)==
+  - ==整体为表单el-form布局==,其中form-item由el-row/col来决定布局格式,布局格式为一行3个;
+  - ==el-row的特性==: 会根据span的和是否为24进行自动换行; 所以为了方便,所有col统一放入一个row中
+  - ==表单的输入与重置==: 
+    - el-form: 属性`:model`来确定form表单的所有内容,由reactive定义searchForm数据,定义后方可输入数据
+    - el-input: 通过v-model绑定searchForm内的数据,将输入值存入表单数据
+    - el-form-item: prop属性->model 的键名,使用了validate、resetFields的方法时,该属性是必填的
+    - 重置: 调用resetFields方法,需要获取表单组件的ref对象,然后调用方法清空数据
+- ==调整布局样式的小知识==
+  [![pVFcBGV.png](https://s21.ax1x.com/2025/06/09/pVFcBGV.png)](https://imgse.com/i/pVFcBGV)
+  > 这里调整了el-form内的上下间隔距离
+- ==国际化->中文: 依据文档提示,有两种方法,选择provider方法==
+  ```ts
+    // 方法1: 由于我们使用自动化注册ele插件,所以这个方法不行
+    import ElementPlus from 'element-plus'
+    import zhCn from 'element-plus/es/locale/lang/zh-cn'
+
+    app.use(ElementPlus, {
+      locale: zhCn,
+    })
+  ```
+  ```html
+    <!-- 最外层App.vue -->
+    <template>
+      <div class="app">
+        <el-config-provider :locale="zhCn">
+          <RouterView></RouterView>
+        </el-config-provider>
+      </div>
+    </template>
+
+    <script setup lang="ts">
+      import { ElConfigProvider } from 'element-plus'
+      import zhCn from 'element-plus/es/locale/lang/zh-cn'
+    </script>
+  ```
+#### 查询用户列表
+- 请求细则详见请求接口
+- 老流程: 书写网络请求,然后在store内请求数据保存
+  ```ts
+    // service/main/system
+    import { hyRequest } from "@/service";
+
+    /** 用户的网络请求 */
+    export function postUsersListData(){
+      return hyRequest.post({
+        url: '/users/list',
+        data: {
+          offset: 0,
+          size: 10
+        }
+      })
+    }
+  ```
+  ```ts
+    // store/main/system/system.ts
+    import { postUsersListData } from "@/service/main/system/system";
+    import { defineStore } from "pinia";
+    import type { ISystemStore } from "../type/type";
+
+    export const useSystemStore = defineStore('system', {
+      state: ():ISystemStore => ({
+        userList: [],
+        userTotalCount: 0
+      }),
+      actions:{
+        async postUserListAction(){
+          const userListResult = await postUsersListData()
+          const {list,totalCount} = userListResult.data
+          this.userList = list
+          this.userTotalCount = totalCount
+        }
+      }
+    })
+  ```
+  > 为了更好的类型提示,同文件夹下新建type,专门用于书写类型,代码略
+- ==**异步数据请求下数据保持响应式**==
+  ```ts
+    // views/main/system/user/cpns/user-content.vue
+    // 这个页面专门用于展示用户管理界面的内容部分
+    import { useSystemStore } from '@/store/main/system/system';
+    import { storeToRefs } from 'pinia';
+
+    // 1.发起action,请求userList的数据
+    const systemStore = useSystemStore()
+    systemStore.postUserListAction() // 异步
+
+    // 2.userList数据是异步请求的,需要保持响应式数据(计算属性或storeToRefs)
+    const {userList} = storeToRefs(systemStore) // 转为ref类型数据
+  ```
+### 用户列表布局
+- ==布局组件为==el-table + el-table-column
+  - ==数据展示:== 
+    - el-table: 自动遍历data内的数据(数组)  
+    - el-table-column: 列名字label + 此列的数据prop
+  - ==特殊列(el-table-column):== type规定此列的类型
+  - 支持插槽,插入了text类型的按钮,其中按钮的css样式修改依旧没有使用`:deep`,原因还是组件根元素的样式无需:deep
 
 
 
