@@ -2,35 +2,22 @@
   <div class="user-content">
     <!-- 顶部搜索栏 -->
     <div class="header">
-      <h3 class="title">用户列表</h3>
-      <el-button type="primary" @click="handleNewUserClick">新建用户</el-button>
+      <h3 class="title">部门列表</h3>
+      <el-button type="primary" @click="handleNewUserClick">新建部门</el-button>
     </div>
 
     <!-- 用户列表 -->
     <div class="table">
-      <!-- 自动遍历data内的数据(数组) -> 列名字label + 此列的数据prop -->
-      <!-- 关于border和align显示问题是因为vscode识别问题,语法没问题 -->
-      <el-table :data="userList" border style="width: 100%">
+      <el-table :data="pageList" border style="width: 100%">
         <!-- 特殊列 -->
         <el-table-column align="center" type="selection" width="55" />
         <el-table-column align="center" type="index" label="序号" width="55" />
 
-        <el-table-column align="center" prop="name" label="用户名" width="120" />
-        <el-table-column align="center" prop="realname" label="真实姓名" width="120" />
-        <el-table-column align="center" prop="cellphone" label="手机号码" width="150" />
-
-        <el-table-column align="center" prop="enable" label="状态" width="100">
-          <!-- 使用作用域插槽: 内部放入状态框,ele会把prop内的数据传入插槽 -->
-          <!-- 回忆: 会把遍历出来的整行的数据(name realname cellphone enable ...) 放入row中 -->
-          <template #default="scope">
-            <el-button size="small" :type="scope.row.enable ? 'success' : 'danger'" plain>
-              {{ scope.row.enable ? "启用" : "禁用" }}
-            </el-button>
-          </template>
-        </el-table-column>
+        <el-table-column align="center" prop="name" label="部门名" width="120" />
+        <el-table-column align="center" prop="leader" label="部门领导" width="120" />
+        <el-table-column align="center" prop="parentId" label="上级部门" width="120" />
 
         <el-table-column align="center" prop="createAt" label="创建时间">
-          <!-- 作用域插槽+格式化时间 -->
           <template #default="scope">
             {{ formatUTC(scope.row.createAt) }}
           </template>
@@ -54,9 +41,8 @@
     <!-- 分页器 -->
     <div class="pagination">
       <div class="demo-pagination-block">
-        <!-- 回忆: v-model:自定义名字 -->
         <el-pagination v-model:current-page="currentPage" v-model:page-size="pageSize" :page-sizes="[10, 20, 30]"
-          layout="total, sizes, prev, pager, next, jumper" :total="userTotalCount" @size-change="handleSizeChange"
+          layout="total, sizes, prev, pager, next, jumper" :total="pageTotalCount" @size-change="handleSizeChange"
           @current-change="handleCurrentChange" />
       </div>
     </div>
@@ -77,41 +63,41 @@ const emit = defineEmits(['newClick','editClick'])
 
 // 1.发起action,请求userList的数据
 const systemStore = useSystemStore()
-fetchUserListData() // 发送网络请求---异步
+fetchPageListData() // 发送网络请求---异步
 
-// 2.userList数据是异步请求的,需要保持响应式数据(计算属性或storeToRefs)
-const { userList, userTotalCount } = storeToRefs(systemStore) // 转为ref类型数据
+// 2.拿数据不再是userList... 而是以页面为主的pageList...
+const { pageList, pageTotalCount } = storeToRefs(systemStore) // 转为ref类型数据
 
 // 3.页码相关逻辑
 function handleSizeChange() {
-  fetchUserListData()
+  fetchPageListData()
 }
 function handleCurrentChange() {
-  fetchUserListData()
+  fetchPageListData()
 }
 
 /** 4.定义函数用于发送网络请求
  * 参数: 
  *  @param formData: 用户查询表单的信息 
  */
-function fetchUserListData(formData: any = {}) {
+function fetchPageListData(formData: any = {}) {
   // 1.获取offset/size
   const size = pageSize.value
-  const offset = (currentPage.value - 1) * size // 特殊情况: 第一页不偏移,所以-1,offset=0
+  const offset = (currentPage.value - 1) * size 
 
   const pageInfo = { size, offset }
   const queryInfo = { ...pageInfo, ...formData }
   // console.log(queryInfo)
-  systemStore.postUserListAction(queryInfo)
+  systemStore.postPageListAction('department',queryInfo)
 }
 
 // 暴漏网络请求方法给父元素
-defineExpose({ fetchUserListData })
+defineExpose({ fetchPageListData })
 
 
-// 5.删除用户数据
+// 5.删除页面数据
 function handleDeleteBtnClick(id: number){
-  systemStore.deleteUserByIdAction(id) // 删除数据后自动回到第一页
+  systemStore.deletePageByIdAction('department',id) // 删除数据后会重新请求一次列表数据,会回到第一页
   currentPage.value = 1 // 页码也要回到第一页
 }
 

@@ -5,6 +5,7 @@ import { localCache } from "@/utils/cache"
 import router from "@/router"
 import { LOGIN_TOKEN } from "@/global/constants"
 import { mapMenusToRoutes } from "@/utils/map-menus"
+import { useMainStore } from "../main/main"
 
 
 const LOGIN = 'login'
@@ -24,8 +25,8 @@ interface ILoginState {
 export const useLoginStore = defineStore(LOGIN, {
   state: (): ILoginState => ({
     token: localCache.getCache(LOGIN_TOKEN) ?? '',
-    userInfo: localCache.getCache(LOGIN).userInfo ?? {},
-    userMenu: localCache.getCache(LOGIN).userMenu ?? []
+    userInfo: localCache.getCache(LOGIN)?.userInfo ?? {},
+    userMenu: localCache.getCache(LOGIN)?.userMenu ?? []
   }),
   actions: {
     async loginAccountAction(account: IAccount) {
@@ -43,6 +44,10 @@ export const useLoginStore = defineStore(LOGIN, {
       const userMenuResult = await getUserMenuByRoleId(this.userInfo.role.id)
       this.userMenu = userMenuResult.data
 
+      /** 插入补充: 4.请求所有的角色和部门数据,在登录成功后,动态路由添加前,先请求相关数据,后面大概率会用,先行请求节约时间 */
+      const mainStore = useMainStore()
+      mainStore.fetchEntireDataAction()
+
       // 3.重点: 动态添加路由
       router.addRoute(mainRoute) // 顶层重新定义了main路由
       const routes = mapMenusToRoutes(this.userMenu)
@@ -59,6 +64,10 @@ export const useLoginStore = defineStore(LOGIN, {
         // 重新执行一次映射和注册路由
         const routes = mapMenusToRoutes(this.userMenu)
         routes.forEach((route) => router.addRoute('main', route))
+
+        // 同理,刷新后重新请求一次角色和部门数据,因为数据可能发生变化(增删改查...),所以需要重新请求
+        const mainStore = useMainStore()
+        mainStore.fetchEntireDataAction()
       }
     }
   },

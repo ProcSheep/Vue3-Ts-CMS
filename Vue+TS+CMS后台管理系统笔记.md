@@ -1127,7 +1127,9 @@
   > 收集当前路径下的面包屑(菜单链条,除了一级菜单仅收集name,之后子菜单均收集name和path,path)
 
 ## 系统管理
+- 页面: `views/system`
 ### 用户管理
+- 页面: `/user`
 #### 顶部布局
 - 页面搭建: `cpns/user-search`  
 - 整体组件: el-row/el-col , el-form/el-form-item
@@ -1169,6 +1171,7 @@
     </script>
   ```
 #### 查询用户列表
+- 内容: `/cpns/user-content`,下面几个章节都是内容区
 - 请求细则详见请求接口
 - 老流程: 书写网络请求,然后在store内请求数据保存
   ```ts
@@ -1222,13 +1225,635 @@
     // 2.userList数据是异步请求的,需要保持响应式数据(计算属性或storeToRefs)
     const {userList} = storeToRefs(systemStore) // 转为ref类型数据
   ```
-### 用户列表布局
+#### 用户列表布局
 - ==布局组件为==el-table + el-table-column
   - ==数据展示:== 
     - el-table: 自动遍历data内的数据(数组)  
     - el-table-column: 列名字label + 此列的数据prop
   - ==特殊列(el-table-column):== type规定此列的类型
-  - 支持插槽,插入了text类型的按钮,其中按钮的css样式修改依旧没有使用`:deep`,原因还是组件根元素的样式无需:deep
+  - ==支持插槽: 普通插槽和**作用域插槽**==
+    - ==**作用域插槽**==: 例如,时间格式化dayjs,具体格式化代码在utils/format.ts,代码略 (==记得先npm i dayjs==)
+      ```html
+        <!-- 使用作用域插槽: 内部放入状态框,ele会把prop内的数据传入插槽 -->
+        <!-- 回忆: 会把遍历出来的整行的数据(name realname cellphone enable ...) 放入row中 -->
+        <el-table-column align="center" prop="createAt" label="创建时间">
+          <!-- 作用域插槽+格式化时间 -->
+          <template #default="scope">
+            {{ formatUTC(scope.row.createAt) }}
+          </template>
+        </el-table-column>
+      ```
+    - ==普通插槽==: 插入了text类型的按钮,其中按钮的css样式修改依旧没有使用`:deep`,原因还是组件根元素的样式无需:deep
+    - 后面这里也会变为作用域插槽
+      ```html
+        <el-table-column align="center" label="操作" width="150">
+          <!-- 插槽放入按钮 -->
+          <template #default>
+            <el-button text size="small" :icon="Edit" type="primary">编辑</el-button>
+            <el-button text size="small" :icon="Delete" type="danger">删除</el-button>
+          </template>
+        </el-table-column>
+      ```
+      ```css
+        /* 组件根元素的样式无需:deep */
+        .el-button {
+          margin-left: 0;
+        }
+      ```
+#### 分页器
+- 1.简单使用分页器组件
+  ```html
+    <div class="pagination">
+        <div class="demo-pagination-block">
+          <!-- 回忆: v-model:自定义名字 -->
+          <el-pagination v-model:current-page="currentPage" v-model:page-size="pageSize" :page-sizes="[10, 20, 30]"
+          layout="total, sizes, prev, pager, next, jumper" :total="userTotalCount" @size-change="handleSizeChange" @current-change="handleCurrentChange" />
+        </div>
+      </div>
+    </div>
+  ```
+  > v-model:current-page/current-size: 当前页和一页多少数据
+  > :total:总数据个数 :page-sizes: 选择一页多少数据 layout: 布局顺序
+  > 事件: 改变当前页或选择一页多少数据的时候触发
+- ==**2.分页与列表的联动**==
+- 分页自带两个监听函数如下,一旦改变自动回调
+  ```ts
+    // 监听单页面个数
+    function handleSizeChange() {
+      fetchUserListData()
+    }
+    // 监听当前页
+    function handleCurrentChange() {
+      fetchUserListData()
+    }
+  ```
+- 加上第一次请求用户列表数据一共有三个地方使用,所以可以统一封装请求用户数据的函数
+  ```ts
+    function fetchUserListData(formData: any = {}) {
+      // 1.获取offset/size
+      const size = pageSize.value
+      const offset = (currentPage.value - 1) * size // 特殊情况: 第一页不偏移,所以-1,offset=0
+      const pageInfo = { size, offset }
+      systemStore.postUserListAction(queryInfo)
+    }
+  ```
+#### 查询用户
+- 查询用户数据,参考接口文档,==在请求用户列表数据的基础上(接口不变,参数增加)==,在query内添加要查询的用户信息,如下为查询用户列表姓名name中有'c'的数据
+  ```json
+    {
+      "offset": 0,
+      "size": 10,
+      "name": "c"
+    }
+  ```
+- 查询的表单在user-search,而显示用户列表数据则在user-content内,两者为兄弟组件,父组件为user.vue,==这种简单关系的组件,用父子通信要比事件总线等方法要简单==
+- ==user-search: 获取表单数据,父传子给user.vue; 同理完成重置数据操作(不传参,只是刷新一下用户列表)==
+  ```ts
+    // 子传父
+    const emit = defineEmits(["queryClick","resetClick"])
+
+    function handleQueryClick(){
+      console.log('查询数据',searchForm)
+      // 子传父: 发送事件+传参
+      emit('queryClick',searchForm)
+    }
+
+    function handleResetClick(){
+      formRef.value?.resetFields()
+      // 将事件传递出去,content内部重新发送网络请求
+      emit('resetClick')
+    }
+  ```
+- ==user.vue: 获取user-content实例对象,调用里面的函数,同时把表单数据传入==
+  ```html
+    <!-- 接受子传父 -->
+    <user-search @query-click="handleQueryClick" @reset-click="handleResetClick" />
+    <user-content ref="contentRef" @new-click="handleNewClick" />
+  ```
+  ```ts
+    import UserContent from './cpns/user-content.vue'
+
+    // 获取user-content组件实例对象
+    const contentRef = ref<InstanceType<typeof UserContent>>()
+    // 执行子传父,同时接受参数
+    function handleQueryClick(formData: any) {
+      contentRef.value?.fetchUserListData(formData)
+    }
+    function handleResetClick() {
+      contentRef.value?.fetchUserListData()
+    }
+  ```
+- ==user-content: 接受查询的表单数据,进行新的网络请求,稍微修改网络请求函数==
+  ```ts
+    /** 4.定义函数用于发送网络请求
+    * 参数: 
+    *  @param formData: 用户查询表单的信息 
+    */
+    function fetchUserListData(formData: any = {}) { // 可以不传参,默认{},即不查询任何数据
+      // 1.获取offset/size
+      const size = pageSize.value
+      const offset = (currentPage.value - 1) * size // 特殊情况: 第一页不偏移,所以-1,offset=0
+
+      const pageInfo = { size, offset }
+      const queryInfo = { ...pageInfo, ...formData }
+      // console.log(queryInfo)
+      systemStore.postUserListAction(queryInfo)
+    }
+
+    // 暴漏网络请求方法给父元素
+    defineExpose({ fetchUserListData })
+  ```
+  > ==同时记得,要爆露自己的fetchUserListData给user(父)调用==
+#### 删除用户
+- 删除用户的很简单,`users/list/:id`,即可自动删除此id的用户数据
+- 老样子,网络请求+StoreAction调用
+  ```ts
+  // service
+    export function deleteUserById(id: number){
+      return hyRequest.delete({
+        url: `/users/${id}`
+      })
+    }
+  ```
+  ```ts
+  // store
+    async deleteUserByIdAction(id:number){
+      const deleteResult = await deleteUserById(id)
+      console.log(deleteResult)
+      // 重新请求一次数据并再次显示
+      this.postUserListAction({ offset: 0, size: 10 })
+    }
+  ```
+  > ==注意: http请求只有发送网络请求后才能获取服务器数据变化,所以删除用户数据后,虽然服务器数据变化了,但是需要额外发送一次请求才可以获取到变化后的数据; 在即时通信,比如微信,QQ,直播等软件,可以通过websocket来实现双向链接,即服务器会定时向客户端发送数据,客户端无需额外的请求数据就可以一直动态地获取服务器的数据变化,并显示在网页上==
+- ==在user-content的删除按钮上调用,**同时利用作用域插槽传入当前点击用户的id**==
+  ```html
+    <!-- 插槽放入按钮,作用域传入操作用户的id -->
+    <template #default="scope">
+      <el-button text size="small" :icon="Edit" type="primary">编辑</el-button>
+      <el-button text size="small" :icon="Delete" type="danger" @click="handleDeleteBtnClick(scope.row.id)">删除</el-button>
+    </template>
+  ```
+  ```ts
+    // 5.删除用户数据
+    function handleDeleteBtnClick(id: number){
+      systemStore.deleteUserByIdAction(id) // 删除数据后自动回到第一页
+      currentPage.value = 1 // 页码也要回到第一页
+    }
+  ```
+
+#### 新建用户
+- ==dialog(模态框)==: 点击新建用户按钮,出现一个中心模态框
+- 模态框组件封装`/cpns/user-model.vue`,同时组件被引入user.vue; ==同上利用父子通信实现模态框的开启和关闭==
+- ==user-content==
+  ```html
+    <el-button type="primary" @click="handleNewUserClick">新建用户</el-button>
+  ```
+  ```ts
+    // 6.新建用户数据
+    function handleNewUserClick(){
+      emit('newClick') 
+    }
+  ```
+- ==user.vue==
+  ```html
+    <user-content ref="contentRef" @new-click="handleNewClick" />
+    <!-- 添加用户弹出的模态框 -->
+    <user-model ref="modelRef" />
+  ```
+  ```ts
+    // 新建用户数据 对user-model组件操作
+    const modelRef = ref<InstanceType<typeof UserModel>>()
+    function handleNewClick() {
+      modelRef.value?.setModelVisable() // 调用显示模态框的函数
+    }
+  ```
+- ==user-model.vue==
+  ```html
+    <el-dialog v-model="dialogVisable" title="新建用户" width="30%" center>
+      <span>Open ...</span>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="dialogVisable = false">取消</el-button>
+          <el-button type="primary" @click="dialogVisable = false">
+            确定
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
+  ```
+  ```ts
+    // 1.是否显示dialog
+    const dialogVisable = ref(false)
+    // 2.更改可见性的方法
+    function setModelVisable(){
+      dialogVisable.value = true
+    }
+    // 暴漏方法: 直接暴漏属性dialogVisable不可控,别人未必按照你的要求去修改,而暴漏方法可以确定如何去操作属性
+    defineExpose({ setModelVisable })
+  ```
+- ==模态框(el-dialog)的布局==: 内容为表单el-form: 具体代码略,表单数据如下
+  ```ts
+    const formData = reactive({
+      name: "",
+      realname: "",
+      password: "",
+      cellphone: "",
+      roleId: "", // 选择角色是Id,根据Id从角色表中选角色
+      department: ""
+    })
+  ```
+#### 角色和部门数据
+- ==角色数据和部门数据:== 这两个数据可能不仅仅在系统管理侧面用,可能在系统总览,商品中心,随便聊聊中使用,所以在store和service中根层创建main.ts,专门用于请求和保存这两个数据
+  ```ts
+  // service
+    export function getEntireRoles(){
+      return hyRequest.post({
+        url: '/role/list' // 不写data(offset/size)默认全部返回
+      })
+    }
+
+    export function getEntireDepartments(){
+      return hyRequest.post({
+        url: '/department/list'
+      })
+    }
+  ```
+  ```ts
+    interface IMainState{
+      entireRoles: RoleList[],
+      entireDepartments: DepartmentList[]
+    }
+
+    export const useMainStore = defineStore('main', {
+      state: ():IMainState => ({
+        entireRoles: [],
+        entireDepartments: []
+      }),
+      actions:{
+        async fetchEntireDataAction(){
+          // 分别拿角色表和部门表的数据
+          const rolesResponse = await getEntireRoles()
+          const rolesResult = rolesResponse.data.list
+          const departmentsResponse = await getEntireDepartments()
+          const departmentsResult = departmentsResponse.data.list
+          // 保存数据
+          this.entireRoles = rolesResult
+          this.entireDepartments = departmentsResult
+        }
+      }
+    })
+  ```
+- ==在登录时选择请求上面2个数据(提前请求,很大概率会用的数据)==
+  ```ts
+    // store/login.ts 
+
+    // loginAccountAction(){}
+    /** 插入补充: 4.请求所有的角色和部门数据,在登录成功后,动态路由添加前,先请求相关数据,后面大概率会用,先行请求节约时间 */
+    const mainStore = useMainStore()
+    mainStore.fetchEntireDataAction()
+
+    // loadStoreAction(){}
+    // 同理,刷新后重新请求一次角色和部门数据,因为数据可能发生变化(增删改查...),所以需要重新请求
+    const mainStore = useMainStore()
+    mainStore.fetchEntireDataAction()
+  ```
+- 在模态框的表单基础上,把角色和部门选择的选项遍历出来,例如下面
+  ```html
+    <!-- user-model -->
+    <el-form-item label="选择角色" prop="roleId">
+      <el-select v-model="formData.roleId" placeholder="请选择角色" style="width: 100%">
+        <el-option v-for="item in entireRoles" :key="item.id" :value="item.id" :label="item.name" />
+      </el-select>
+    </el-form-item>
+  ```
+- ==新建与编辑的判断,两者共用一个模态框,后面需要判断==
+- 编辑用户(user-content)和模态框(user-model)是兄弟关系,同理利用父子通信user中间人去传数据
+- 编译用户需要回显数据,所以利用作用域插槽先给编辑事件传递用户单项数据,然后传递给user,最后传入user-model
+- ==user-content==
+  ```html
+    <el-button text size="small" :icon="Edit" type="primary" @click="handleEditBtnClick(scope.row)">编辑</el-button>
+  ``` 
+  ```ts
+    const emit = defineEmits(['newClick','editClick'])
+    // 7.编辑用户数据,需要知道编辑的是谁,然后回显以供编辑
+    function handleEditBtnClick(itemData:any){
+      emit('editClick',itemData)
+    }  
+  ```
+- ==user==
+  ```html
+    <user-content ref="contentRef" @new-click="handleNewClick" @edit-click="handleEditClick" />
+  ```
+  ```ts
+    // 编辑用户数据
+    function handleEditClick(itemData: any){
+      modelRef.value?.setModelVisable(false,itemData)
+    }
+  ```
+- ==model: 需要区分是否是新建用户==
+- 点击编辑或点击新建用户都会调用setModelVisable函数
+  ```ts
+    const isNewRef = ref(true) // // 是否为创建新用户的操作
+    const editData = ref() // 记录被编辑用户的id数据
+    // 更改可见性的方法,可能会传入回显的个人数据
+    function setModelVisable(isNew: boolean = true, itemData?: any) {
+      dialogVisable.value = true // 显示dialog
+      isNewRef.value = isNew
+      if (!isNew && itemData) { // 编辑数据,所有数据回显
+        for (const key in formData) {
+          formData[key] = itemData[key]
+        }
+        editData.value = itemData // 记录编辑用户的数据
+      } else { // 新建数据,所有数据赋空值
+        for (const key in formData) {
+          formData[key] = ""
+        }
+        editData.value = null // 新建用户则没有要编辑的数据,赋值null
+      }
+    }
+  ```
+  > 编辑用户回显数据,新建用户则清除数据
+  > 同时文件内全局变量isNewRef和editData记录是否为编辑用户和用户数据,dialog面板显示和提交数据时会用
+- 进入dialog弹窗,编辑数据后提交,需要用户的id数据,如下
+  ```ts
+    export function editUserData(id:number, userInfo: any){
+      return hyRequest.patch({
+        url: `/users/${id}`,
+        data: userInfo
+      })
+    }
+  ```
+  ```ts
+    async editUserDataAction(id: number, userInfo: any) {
+      const editResult = await editUserData(id, userInfo)
+      console.log(editResult)
+      // 重新请求一次数据并再次显示
+      this.postUserListAction({ offset: 0, size: 10 })
+    }
+  ```
+- ==最后提交dialog表单需要先判断是创建还是编辑==
+  ```ts
+    // 4.提交表单
+    const systemStore = useSystemStore()
+    function handleConfirmBtn() {
+      dialogVisable.value = false // 隐藏dialog
+      if (!isNewRef.value && editData.value) {  // 编辑数据
+        systemStore.editUserDataAction(editData.value.id, formData)
+      } else {  // 创建新的用户
+        systemStore.newUserDataAction(formData)
+      }
+    }
+
+  ```
+  > 最后,创建用户和编辑用户的面板不同,title标题不同,编辑用户不显示密码一栏
+
+
+### **高级封装**
+- ==**高级封装整理后,可以快速搭建其他类似的页面,封装的顺利程度和后端写的接口/数据格式的规范程度成正相关,如果后端的接口和数据都是乱的,需要自己先整理一下然后再重构**==
+#### Page的网络请求
+- ==以department页面为例子,初步封装==
+- ==1.复制user的cpns组件内的user-cotent/model/search三个组件,放入department/cpns,改名前缀为page==
+- 部分页面department和用户页面user结构是一样的,所以组件复用,组件内部代码适当删减修改,特指html部分代码,这里省略,都是小细节,比如改改名字,删除一些不必要的表单项(电话,密码等)
+- ==2.网络请求(增删改查)==
+- ==以页面为主进行网络请求,不再单一地以用户页,部门页为主体请求部分页面的数据,老师的后端接口很有规律,可以复用之前写的请求用户数据的代码==
+  ```ts
+    /** 针对页面的网络请求: 增删改查 */
+    // 要求后端接口规范化,如果公司后端写接口不规范,可以自己写一个函数规范处理一下
+    export function postPageListData( pageName:string ,queryInfo: any){
+      return hyRequest.post({
+        url: `/${pageName}/list`,
+        data: queryInfo
+      })
+    }
+
+    export function deletePageById(pageName: string, id: number){
+      return hyRequest.delete({
+        url: `/${pageName}/${id}`
+      })
+    }
+
+    export function newPageData(pageName: string, userInfo: any){
+      return hyRequest.post({
+        url: `/${pageName}`,
+        data: userInfo
+      })
+    }
+
+    export function editPageData(pageName: string, id:number, userInfo: any){
+      return hyRequest.patch({
+        url: `/${pageName}/${id}`,
+        data: userInfo
+      })
+    }
+  ```
+  > ==所有的请求都需要额外加一个参数,即页面名字==
+- ==同理service,调用最新的网络请求函数==
+  ```ts
+    /** 针对页面数据的网络请求: 增删改查 */
+    // 后端返回的页面数据是很规范的
+
+    // 请求页面数据
+    async postPageListAction(pageName: string, queryInfo: any) {
+      const pageListResult = await postPageListData(pageName, queryInfo)
+      const { list, totalCount } = pageListResult.data
+      this.pageList = list
+      this.pageTotalCount = totalCount
+    },
+
+    // 删除页面数据: 先确定删除页面的名字,是删除部门还是用户还是其他的... ,然后再删除
+    async deletePageByIdAction(pageName: string, id: number) {
+      const deleteResult = await deletePageById(pageName, id)
+      console.log(deleteResult)
+      // 重新请求一次数据并再次显示
+      this.postPageListAction(pageName, { offset: 0, size: 10 })
+    },
+
+    // 新建页面数据: 同上
+    async newPageDataAction(pageName: string, queryInfo: any) {
+      const newResult = await newPageData(pageName, queryInfo)
+      console.log(newResult)
+      // 重新请求一次数据并再次显示
+      this.postPageListAction(pageName, { offset: 0, size: 10 })
+    },
+
+    // 编辑页面数据: 同上
+    async editPageDataAction(pageName: string, id:number, queryInfo: any) {
+      const editResult = await editPageData(pageName ,id, queryInfo)
+      console.log(editResult)
+      // 重新请求一次数据并再次显示
+      this.postPageListAction(pageName, { offset: 0, size: 10 })
+    }
+  ```   
+- ==3.页面逻辑不变,调用新的函数(pageXXX),传递新的参数,代码略==
+
+#### 表单的循环
+- ==每个页面的布局中,内部都是大量的表单结构,**如果这些表单以`v-for`循环的形式展示,则会节省很多时间**==
+- ==1.以page-search为例子,在根目录下`components/page-search`中创建通用的搜索组件,复制原有的cpns/page-search组件改造==
+- 说明: department文件中V1版本的为原始的,依靠写死的html显示搜索部分; 而department.vue文件则是使用通用page-search显示搜索部分
+  ```html
+    <!-- department.vue 添加新的父传子,传递search-config数据进入组件,组件根据数据for循环渲染表单内容 -->
+    <PageSearch 
+      @query-click="handleQueryClick" 
+      @reset-click="handleResetClick" 
+      :search-config="searchConfig"
+    />
+  ```
+- ==2.配置config文件,配置项和html页面结构对应==
+- department下新建config文件夹
+  ```ts
+    // search.config.ts
+    // 和html页面结构对应 (相似页面的配置互相拷贝即可)
+    // 简要的配置关键信息,还可以配置更多
+    const searchConfig = {
+      formItems: [
+        {
+          type: "input",
+          prop: "name",
+          label: "部门名称",
+          placeholder: "请输入查询部门名称"
+        },
+        {
+          type: "input",
+          prop: "leader",
+          label: "部门领导",
+          placeholder: "请输入查询部门领导名称"
+        },
+        {
+          type: "date-picker",
+          prop: "createAt",
+          label: "创建时间"
+        }
+      ]
+    }
+
+    export default searchConfig
+  ```
+- ==3.通用search组件接受配置,渲染html==
+  ```html
+     <el-form :model="searchForm" ref="formRef" label-width="80px" size="large">
+        <el-row :gutter="20">
+          <!-- for循环传入的数据searchConfig.formItems -->
+          <el-col :span="8" v-for="item in searchConfig.formItems" :key="item.prop">
+            <el-form-item :label="item.label" :prop="item.prop">
+              <!-- 动态组件不好绑定属性(可以利用v-bind),这里类型不多,所以if判断具体怎么写 -->
+              <template v-if="item.type === 'input'">
+                <el-input v-model="searchForm[item.prop]" :placeholder="item.placeholder"/>
+              </template>
+              <template v-if="item.type === 'date-picker'">
+                <el-date-picker v-model="searchForm[item.prop]" type="daterange" range-separator="到"
+                  start-placeholder="开始时间" end-placeholder="结束时间" />
+              </template>
+            </el-form-item>
+          </el-col>
+        </el-row>
+      </el-form>
+  ```
+- ==searchForm的初始化问题==
+- 由于传入组件的配置文件不是固定的,所以不能写死数据,还是遍历数据
+  ```ts
+    // 定义父传子的类型
+    interface Iprops {
+      searchConfig: {
+        formItems: any[]
+      }
+    }
+    // 父传子(ts可以这么写)
+    const props = defineProps<Iprops>()
+    // 遍历配置,初始化表单
+    const initalFrom: any = {}
+    for(const item of props.searchConfig.formItems){
+      initalFrom[item.prop] = ""
+    }
+    const searchForm = reactive(initalFrom)
+  ```
+- ==上述操作遍历后searchForm如下==
+  ```ts
+    const searchForm = reactive({
+      name: "",
+      leader: "",
+      createAt: ""
+    })
+  ```
+- 如此封装下,再次使用组件只需要配置config即可轻松实现页面搜索部分的搭建,如下role的示例(很简单)
+  ```html
+    <!-- role.vue -->
+    <template>
+      <div class="role">
+        <PageSearch :search-config="searchConfig"/>
+      </div>
+    </template>
+
+    <script setup lang="ts" name="role">
+      import PageSearch from '@/components/page-search/page-search.vue'
+      import searchConfig from './config/role.config';
+    </script>
+  ```
+  ```ts
+    // 和html页面结构对应 (相似页面的配置互相拷贝即可)
+    const searchConfig = {
+      formItems: [
+        {
+          type: "input",
+          prop: "name",
+          label: "角色名称",
+          placeholder: "请输入角色名称"
+        },
+        {
+          type: "input",
+          prop: "leader",
+          label: "权限介绍",
+          placeholder: "请输入权限介绍"
+        },
+        {
+          type: "date-picker",
+          prop: "createAt",
+          label: "创建时间"
+        }
+      ]
+    }
+
+    export default searchConfig
+  ```
+  > ==结构类似,改了改名字即可==
+- 如下图: 
+  [![pVk0sdP.png](https://s21.ax1x.com/2025/06/11/pVk0sdP.png)](https://imgse.com/i/pVk0sdP)
+
+- ==**4.特殊结构的配置**==
+- 比如用户系统的搜索部分中,有选择框格式的表单样式,需要特殊配置,例如
+  ```ts
+    {
+      type: "select",
+      prop: "enable",
+      label: "状态",
+      placeholder: "请选择状态",
+      options: [
+        { label: "启用", value: 1},
+        { label: "禁用", value: 0}
+      ]
+    }
+  ```
+  ```html
+   <el-col :span="8" v-for="item in searchConfig.formItems" :key="item.prop">
+      <template v-if="item.type === 'select'">
+        <el-select v-model="searchForm[item.prop]" :placeholder="item.placeholder">
+          <el-option v-for="option in item.options" :label="option.label" :value="option.value"/>
+        </el-select>
+      </template>
+    </el-col>
+  ```
+  > ==这种结构还会出现在page-model页面中的dialog表单中,里面有选择部门或角色的选择框,而且这些选择框内容不能像现在这样写死,它们通过网络请求异步请求过来的,后面会讲解==
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
