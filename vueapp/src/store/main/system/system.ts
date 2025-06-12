@@ -50,7 +50,8 @@ export const useSystemStore = defineStore('system', {
       const pageListResult = await postPageListData(pageName, queryInfo)
       const { list, totalCount } = pageListResult.data
       this.pageList = list
-      this.pageTotalCount = totalCount
+      this.pageTotalCount = totalCount ?? 0 // 可能没有值(undefined),比如menu页
+      // 后续^: 不过已经解决了,配置了hasPagination项,menu不渲染分页部分
     },
 
     // 删除页面数据: 先确定删除页面的名字,是删除部门还是用户还是其他的... ,然后再删除

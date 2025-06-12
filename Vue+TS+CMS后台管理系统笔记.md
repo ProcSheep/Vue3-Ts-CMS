@@ -1843,18 +1843,374 @@
   ```
   > ==这种结构还会出现在page-model页面中的dialog表单中,里面有选择部门或角色的选择框,而且这些选择框内容不能像现在这样写死,它们通过网络请求异步请求过来的,后面会讲解==
 
+#### 抽取page-content
+- ==同上,抽取通用的内容组件放入`components/`,把原来cpns内部的page-content替换掉,然后修改`page-content`组件==
+- ==方法1:遍历常见的类型== 
+  ```html
+    <!-- department.vue -->
+    <el-table :data="pageList" border style="width: 100%">
+        <template v-for="item in contentConfig.propsList" :key="item.prop">
+          <template v-if="item.type === 'timer'">
+            <!-- 回忆: 属性绑定v-bind = { name: "why", age: 18 } ==> :name="why" :age=18 -->
+            <!-- 特殊列: 插槽+调用函数, v-bind会额外绑定一个无用的type属性 :type:"timer" -->
+            <el-table-column align="center" v-bind="item">
+              <template #default="scope">
+                {{ formatUTC(scope.row[item.prop]) }}
+              </template>
+            </el-table-column>
+          </template>
+          <template v-else-if="item.type === 'handler'">
+            <el-table-column align="center" v-bind="item">
+              <!-- 插槽放入按钮,作用域传入操作用户的id -->
+              <template #default="scope">
+                <el-button text size="small" :icon="Edit" type="primary"
+                  @click="handleEditBtnClick(scope.row)">编辑</el-button>
+                <el-button text size="small" :icon="Delete" type="danger"
+                  @click="handleDeleteBtnClick(scope.row.id)">删除</el-button>
+              </template>
+            </el-table-column>
+          </template>
+          <template v-else>
+            <!-- 普通列: 无插槽,不调用函数,数据写死 -->
+            <el-table-column align="center" v-bind="item" />
+          </template>
+        </template>
+    </el-table>
+  ```
+  ```ts
+    // content.config.ts
+    const contentConfig = {
+        header: {
+          title: "部门列表",
+          subTitle: "新建部门"
+        },
+        propsList: [
+          { type: "selection", label: "选择",  width: "70px" },
+          { type: "index", label: "序号",  width: "70px" },
+          { type: "normal", label: "部门名称", prop: "name", width: "150px" },
+          { type: "normal", label: "部门领导", prop: "leader", width: "150px" },
+          { type: "normal", label: "上级部门", prop: "parentId", width: "100px" },
 
+          { type: "timer", label: "创建时间", prop: "createAt" },
+          { type: "timer", label: "更新时间", prop: "updateAt" },
 
+          { type: "handler", label: "操作", width: "150px" }
+        ]
+      }
+  ```
+  > ==缺点: 类型太多,不可能全部列举出来,只能列举常见的属性,比如序号,名称,创建更新的时间,"操作"的按钮等==
+- ==**2.更加高级的定制化**==
+- ==更加高级的定制化就是使用**插槽**==
+    ```js
+    // content.config.ts
+    { type: "custom", label: "部门领导", prop: "leader", width: "150px", slotName: "leader" },
+    { type: "custom", label: "上级部门", prop: "parentId", width: "100px", slotName: "parentId" }
+  ```
+  ```html
+    <!-- components/page-content.vue -->
+    <template v-else-if="item.type === 'custom'">
+      <!-- 特殊定制列: 具名作用域插槽 -->
+      <el-table-column align="center" v-bind="item">
+        <!-- 定义传递的属性为scope -->
+        <template #default="scope">
+          <!-- 所有的属性都会被传入scope内部,下面一个是直接给scope赋值scope,另一个是给scope.prop赋值item.prop -->
+          <slot :name="item.slotName" v-bind="scope" :prop="item.prop"></slot>
+        </template>
+      </el-table-column>
+    </template>
+  ```
+  ```html
+    <!-- department.vue -->
+    <PageContent ref="contentRef" @new-click="handleNewClick" @edit-click="handleEditClick"
+      :content-config="contentConfig">
+      <!-- 完全自定义的定制化: 插槽 -->
+      <template #leader="scope">
+        <div class="leaderText">[{{ scope.row[scope.prop] }}]</div>
+      </template>
+      <template #parentId="scope">
+        <div class="parentText">--{{ scope.row[scope.prop] ?? '/' }}--</div>
+      </template>
+    </PageContent>
+  ```
+  ```css
+    .leaderText{
+      color: blue;
+    }
+    .parentText {
+      color: red;
+    }
+  ```
+- ==额外的,事件绑定也不是固定的department,所以可以再额外传入一个参数pageName(config里也要加),把page-content里面请求数据的`department`改为`prop.contentConfig.pageName`,针对不同的页面请求不同数据==
+- 总结图: 
+  [![pVk7p7V.png](https://s21.ax1x.com/2025/06/12/pVk7p7V.png)](https://imgse.com/i/pVk7p7V)
+#### 抽取page-model
+- department页面的page-model封装
+- ==按照步骤: 通用组件page-model.vue + 配置文件model.config.ts==
+- ==1.先按照之前的步骤配置config,下面是普通的配置==
+  ```ts
+    const modelConfig = {
+      pageName: 'department',
+      header: {
+        newTitle: "新建部门",
+        editTitle: "编辑部门",
+      },
+      formItems: [
+        { type: "input", label: "部门名称", prop: "name", placeholder: "请输入部门名称" },
+        { type: "input", label: "部门领导", prop: "leader", placeholder: "请输入部门领导" },
+        {
+          type: "select", label: "上级部门", prop: "parentId", placeholder: "请输入上级部门",
+          options: [
+            // 这里的数据不是写死的,而是服务器发送过来的
+            // { label: "财务部", value:"111" },
+            // { label: "保安部", value:"222" },
+          ] as any[] // 默认类型推导这是个never类型,这是不对的
+        }
+      ]
+    }
 
+    export default modelConfig
+  ```
+- ==**2.异步数据添加,针对options**==
+- 在modelConfig被引入组件page-model之前,先对modelConfig进行修改 ( department.vue)
+  ```html
+    <PageModel :model-config="modelConfigRef" ref="modelRef" />
+  ```
+  ```ts
+    // 1.配置modelConfig,新增异步数据
+    // 通过计算属性,内部依赖项(响应式数据)发生改变时,会重新计算返回新的数据
+    const modelConfigRef = computed(() => {
+      const mainStore = useMainStore()
+      // store中的entireDepartments数据是在login.ts中,也就是登录的时候就已经请求过了
+      // 格式化一个符合要求的部门数组departments
+      const departments = mainStore.entireDepartments.map(item => {
+        return { label: item.name, value: item.id }
+      })
+      modelConfig.formItems.forEach((item) => {
+        if (item.prop === "parentId") {
+          item.options?.push(...departments)
+        }
+      })
+      return modelConfig
+    })
+  ```
+  > 修改后可以动态地获取异步数据添加进表单的select中,实现动态选项options
+#### 抽取hooks
+- 对于setup内相同逻辑的抽取,hooks新建文件,==以usePageContent.ts为例==
+  ```ts
+    import { ref } from "vue"
+    import type PageContent from '@/components/page-content/page-content.vue'
 
+    function usePageContent() {
+      /** search content内父子通信的操作 */
+      const contentRef = ref<InstanceType<typeof PageContent>>()
+      function handleQueryClick(queryInfo: any) {
+        contentRef.value?.fetchPageListData(queryInfo)
+      }
+      function handleResetClick() {
+        contentRef.value?.fetchPageListData()
+      }
 
+      return {
+        contentRef,
+        handleQueryClick,
+        handleResetClick
+      }
+    }
 
+    export default usePageContent
+  ```
+- 之后引入组件可以很简单一行代码搞定,如下
+  ```ts
+    // setup内相同逻辑的抽取 -> hooks
+    const { contentRef, handleQueryClick, handleResetClick } = usePageContent()
+    const { modelRef, handleNewClick, handleEditClick } = usePageModel()
+  ```
+#### 角色管理role
+- ==体会封装的组件如何快速搭建一个网页,**把一个相似的文件分为3个部分,search/content/model**==
+  ```html
+    <template>
+      <div class="role">
+        <PageSearch :search-config="searchConfig" @query-click="handleQueryClick" @reset-click="handleResetClick"/>
+        <PageContent ref="contentRef" :content-config="contentConfig" @new-click="handleNewClick" @edit-click="handleEditClick"/>
+        <PageModel ref="modelRef" :model-config="modelConfig"/>
+      </div>
+    </template>
 
+    <script setup lang="ts" name="role">
+      // 组件和配置文件
+      import PageSearch from '@/components/page-search/page-search.vue'
+      import PageContent from '@/components/page-content/page-content.vue';
+      import PageModel from '@/components/page-model/page-model.vue';
+      import searchConfig from './config/role.config';
+      import contentConfig from './config/content.config';
+      import modelConfig from './config/model.config';
+      // hooks
+      import usePageContent from '@/hooks/usePageContent';
+      import usePageModel from '@/hooks/usePageModel';
 
+      // 触发必要事件的函数
+      const { contentRef, handleQueryClick, handleResetClick } = usePageContent()
+      const { modelRef, handleNewClick, handleEditClick } = usePageModel()
+    </script>
+  ```
+#### 菜单管理
+- ==el-table的树形数据==: 支持树类型的数据的显示。 ==当 row 中包含 children 字段时，被视为树形数据。 渲染嵌套数据需要 prop 的 row-key==。 此外，子行数据可以异步加载。 设置 Table 的lazy属性为 true 与加载函数 load 。 ==通过指定 row 中的hasChildren字段来指定哪些行是包含子节点。 children 与hasChildren都可以通过 tree-props 配置, 例如`:tree-props="{ children: 'children', hasChildren: 'hasChildren' }"`代表子树属性在children属性内,hasChildren即代表有子树==。 
+- 解释图: 
+  [![pVkL6RU.png](https://s21.ax1x.com/2025/06/12/pVkL6RU.png)](https://imgse.com/i/pVkL6RU)
+- ==通用page-content==
+  ```html
+    <!-- el-table升级为可展开行的table: 关键属性row-key (唯一id), 选择v-bind绑定,如果没有这个属性就不绑定 -->
+    <el-table :data="pageList" border style="width: 100%" v-bind="contentConfig.childrenTree">...</el-table>
+  ```
+- 关键属性: `row-key`,写进配置项即可,确定是唯一的id即可
+  ```ts
+    childrenTree : {
+      rowKey: 'id'
+    },
+  ```
+- 另外菜单管理这里没有分页器,为了区分,新增属性如下
+  ```ts
+    hasPagination: false
+  ```
+- 同时更改page-content内的属性,确保正确的显示
+  ```html
+    <div class="pagination" v-if="contentConfig.hasPagination"> ...
+  ```
+  ```ts
+    interface IProps {
+      contentConfig: {
+        // ...
+        hasPagination?: boolean
+      }
+    }
+    // 给 hasPagination 默认值 true, 只有menu页面没有
+    if (props.contentConfig.hasPagination === undefined) {
+      props.contentConfig.hasPagination = true
+    }
+  ```
+#### 角色权限管理
+- 在新建角色的表单中,可以给角色分配权限,分配权限的组件是树形控件组件Tree
+- ==model内的自定义插槽,不需要传递数据,所以不需要作用域插槽,之前做过类似的需求,在部门页面==
+  ```ts
+    // 配置custom (role/config/model.config.ts)
+    const modelConfig = {
+      pageName: 'role',
+      header: {
+        newTitle: "新建角色",
+        editTitle: "编辑角色",
+      },
+      formItems: [
+        { type: "input", label: "角色名称", prop: "name", placeholder: "请输入角色名称" },
+        { type: "input", label: "权限介绍", prop: "intro", placeholder: "权限介绍" },
+    ->  { type: "custom", slotName: 'menuList' }
+      ]
+    }
+  ```
+  ```html
+    <!-- 通用组件page-model + 插槽: role页面使用过-->
+    <template v-for="item in modelConfig.formItems" :key="item.prop">
+      <template v-if="item.type === 'custom'">
+        <slot :name="item.slotName"></slot>
+      </template>
+    </template>
+  ```
+- ==使用插槽(role.vue): 树控组件需要菜单数据,coderwhy老师的数据已经整理好了,再写新的网络请求== 
+  ```html
+    <PageModel ref="modelRef" :model-config="modelConfig">
+      <!-- 插槽: 角色的权限选择 -->
+      <template #menuList>
+        <!-- data: 树结构数据; node-key: 每个树节点用来作为唯一标识的属性，整棵树应该是唯一的; -->
+        <!-- props: label/指定节点的文本 children/根据属性寻找data中的子树节点  -->
+        <el-tree style="max-width: 600px" :data="entireMenus" show-checkbox node-key="id"
+          :props="{ children: 'children', label: 'name' }" />
+      </template>
+    </PageModel>
+  ```
+- ==main内的网络请求==
+  ```ts
+    // ============ service =============
+    export function getEntireMenus(){
+      return hyRequest.post({
+        url: '/menu/list'
+      })
+    }
+    // ============ store ================
+    export const useMainStore = defineStore('main', {
+      state: ():IMainState => ({
+        entireRoles: [],
+        entireDepartments: [],
+        entireMenus: []
+      }),
+      actions:{
+        async fetchEntireDataAction(){
+          // 分别拿角色表和部门表的数据
+          const rolesResult = await getEntireRoles()
+          const departmentsResult = await getEntireDepartments()
+          const menusResult = await getEntireMenus()
+          // 保存数据
+          this.entireRoles = rolesResult.data.list
+          this.entireDepartments = departmentsResult.data.list
+          this.entireMenus = menusResult.data.list
+        }
+      }
+    })
+  ```
 
-
-
-
-
+#### 创建角色+权限
+- 在role页面中,树形控件如下,新增默认事件handleElTreeCheck
+  ```html
+    <el-tree style="max-width: 600px" :data="entireMenus" show-checkbox node-key="id"
+    :props="{ children: 'children', label: 'name' }" @check="handleElTreeCheck"/>
+  ```
+- ==组件的自定义事件handleElTreeCheck==
+  ```ts
+    // 参数1: 仅选中项整个的完整对象 参数2: 选中项和父项的数据
+    function handleElTreeCheck(data1: any, data2: any){}
+  ```
+  [![pVkObt0.png](https://s21.ax1x.com/2025/06/12/pVkObt0.png)](https://imgse.com/i/pVkObt0)
+- ==树控组件属于插槽内容,所以获取的数据在role内,需要提交的表单函数则在其子组件page-model内部,所以再次父传子(可选的)==
+- 收集信息传入子组件page-model 
+  ```html
+     <PageModel ref="modelRef" :model-config="modelConfig" :other-info="otherInfo">...</PageModel>
+  ```
+  ```ts
+    const otherInfo = ref({}) // 记录menuList,一会父传子
+    // 参数1: 仅选中项整个的完整对象 参数2: 选中项和父项的数据
+    function handleElTreeCheck(data1: any, data2: any){
+      // 记录选中项和父项的权限id
+      console.log(data2.checkedKeys,data2.halfCheckedKeys)
+      const menuList = [...data2.checkedKeys,...data2.halfCheckedKeys]
+      otherInfo.value = { menuList } 
+    }
+  ```
+- ==page-content接受组件,重新整理提交的表单数据==
+  ```ts
+    interface IProps {
+      modelConfig: {
+        // ...
+      },
+      otherInfo?: any
+    }
+    // ==============================================
+    // 4.提交表单
+    const systemStore = useSystemStore()
+    function handleConfirmBtn() {
+      let infoData = formData  // 最终要提交的表单,先把表单数据赋值
+      if(props.otherInfo){
+        infoData = { ...infoData, ...props.otherInfo } 
+      }
+      dialogVisable.value = false // 隐藏dialog
+      if (!isNewRef.value && editData.value) {  // 编辑数据
+        systemStore.editPageDataAction(props.modelConfig.pageName, editData.value.id, infoData)
+      } else {  // 创建数据
+        systemStore.newPageDataAction(props.modelConfig.pageName, infoData)
+      }
+    }
+  ```
+  > 把合并后的数据infoData一起提交即可,在pinia中的system/pageList中可以查看自己添加用户的权限是否正确
+  > ==**这里这么简单的原因还是老师设计的后端规范工整,环环相扣,合并直接就可以提交数据**==
+  
+#### 组件的回显和销毁重置 待
+.....
 
 

@@ -57,7 +57,7 @@ function loginAction(isRemPwd: boolean) {
   // 校验表单的逻辑
   formRef.value?.validate((valid, field) => {
     if (valid) {
-      console.log('验证成功 把密码和账号发送给后端', account.name, account.password)
+      // console.log('验证成功 把密码和账号发送给后端', account.name, account.password)
       const name = account.name
       const password = account.password
       // 登录操作: 派发store内的登录函数

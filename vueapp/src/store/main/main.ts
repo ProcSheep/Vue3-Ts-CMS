@@ -1,27 +1,29 @@
-import { getEntireRoles,getEntireDepartments } from "@/service/main/main";
+import { getEntireRoles,getEntireDepartments, getEntireMenus } from "@/service/main/main";
 import { defineStore } from "pinia";
 import type { DepartmentList, RoleList } from "./type/type";
 
 interface IMainState{
   entireRoles: RoleList[],
-  entireDepartments: DepartmentList[]
+  entireDepartments: DepartmentList[],
+  entireMenus: any[] // 懒得写了
 }
 
 export const useMainStore = defineStore('main', {
   state: ():IMainState => ({
     entireRoles: [],
-    entireDepartments: []
+    entireDepartments: [],
+    entireMenus: []
   }),
   actions:{
     async fetchEntireDataAction(){
       // 分别拿角色表和部门表的数据
-      const rolesResponse = await getEntireRoles()
-      const rolesResult = rolesResponse.data.list
-      const departmentsResponse = await getEntireDepartments()
-      const departmentsResult = departmentsResponse.data.list
+      const rolesResult = await getEntireRoles()
+      const departmentsResult = await getEntireDepartments()
+      const menusResult = await getEntireMenus()
       // 保存数据
-      this.entireRoles = rolesResult
-      this.entireDepartments = departmentsResult
+      this.entireRoles = rolesResult.data.list
+      this.entireDepartments = departmentsResult.data.list
+      this.entireMenus = menusResult.data.list
     }
   }
 })
